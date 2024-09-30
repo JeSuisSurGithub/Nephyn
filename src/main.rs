@@ -293,81 +293,131 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Read, Write, BufWriter};
+use std::io::{self, Read, Write, BufReader, BufWriter};
+use std::time::Instant;
+use lazy_static::lazy_static;
+use std::hash::BuildHasherDefault;
+use ahash::AHasher;
 
+const MAX_DICT_SIZE: usize = 65535;
 const CLEAR_CODE: u16 = 65535;
 
-struct LZWState {
-    dict: HashMap<Vec<u8>, u16>,
+lazy_static! {
+    static ref ENCODE_DICT: HashMap<Vec<u8>, u16, BuildHasherDefault<AHasher>> = {
+        let mut dict = HashMap::with_capacity_and_hasher(MAX_DICT_SIZE, BuildHasherDefault::default());
+        for i in 0..=255 {
+            dict.insert(vec![i as u8], i as u16);
+        }
+        dict
+    };
+}
+
+lazy_static! {
+    static ref DECODE_TABLE: Vec<Vec<u8>> = {
+        let mut table = vec![vec![]; MAX_DICT_SIZE];
+
+        for i in 0..=255 {
+            table[i] = vec![i as u8];
+        }
+        table
+    };
+}
+
+struct LZWEncodeCtx {
+    dict: HashMap<Vec<u8>, u16, BuildHasherDefault<AHasher>>,
     cur_code: u16,
     bit_width: u8,
     bit_buf: u64,
     bit_buf_len: u8,
+    next_growth: u32,
+}
+struct LZWDecodeCtx {
+    table: Vec<Vec<u8>>,
+    cur_code: u16,
+    bit_width: u8,
+    bit_buf: u64,
+    bit_buf_len: u8,
+    next_growth: u32,
 }
 
-impl LZWState {
-    fn new() -> LZWState {
-        let mut dict = HashMap::new();
-
-        for i in 0..=255 {
-            dict.insert(vec![i as u8], i as u16);
-        }
-
-        LZWState {
-            dict,
+impl LZWEncodeCtx {
+    fn new() -> LZWEncodeCtx {
+        LZWEncodeCtx {
+            dict: ENCODE_DICT.clone(),
             cur_code: 256,
             bit_width: 9,
             bit_buf: 0,
             bit_buf_len: 0,
+            next_growth: 512,
         }
     }
 
     fn reset(&mut self) {
-        self.dict.clear();
-        for i in 0..=255 {
-            self.dict.insert(vec![i as u8], i as u16);
-        }
+        self.dict = ENCODE_DICT.clone();
         self.cur_code = 256;
         self.bit_width = 9;
+        self.next_growth = 512;
     }
 }
 
-fn lzw_encode(input: &mut dyn Read, output: &mut dyn Write, state: &mut LZWState) -> Result<(), io::Error>
-{
-    let mut buf = Vec::new();
-    input.read_to_end(&mut buf)?;
+impl LZWDecodeCtx {
+    fn new() -> LZWDecodeCtx {
+        LZWDecodeCtx {
+            table: DECODE_TABLE.clone(),
+            cur_code: 256,
+            bit_width: 9,
+            bit_buf: 0,
+            bit_buf_len: 0,
+            next_growth: 511,
+        }
+    }
 
-    let mut cur_data = Vec::new();
+    fn reset(&mut self) {
+        self.table = DECODE_TABLE.clone();
+        self.cur_code = 256;
+        self.bit_width = 9;
+        self.next_growth = 511;
+    }
+}
+
+fn lzw_encode(input: &mut dyn Read, output: &mut dyn Write) -> Result<(), io::Error>
+{
+    let mut state: LZWEncodeCtx = LZWEncodeCtx::new();
+
+    let mut reader = BufReader::new(input);
     let mut writer = BufWriter::new(output);
 
-    for &byte in buf.iter() {
-        let mut new_cur_data = cur_data.clone();
-        new_cur_data.push(byte);
+    let mut byte = [0u8; 1];
+    let mut cur_data = Vec::with_capacity(16);
 
-        if state.dict.contains_key(&new_cur_data) {
-            cur_data = new_cur_data;
-        } else {
-            write_code(state.dict[&cur_data], state, &mut writer)?;
+    while reader.read_exact(&mut byte).is_ok() {
+        cur_data.push(byte[0]);
 
-            if state.cur_code < CLEAR_CODE {
-                if (state.cur_code as u32) == 2u32.pow(state.bit_width as u32) {
+        if !state.dict.contains_key(&cur_data) {
+            let mut prev_cur_data = cur_data.clone();
+            prev_cur_data.pop();
+            write_code(state.dict[&prev_cur_data], 32, &mut state, &mut writer)?;
+
+            if state.cur_code != CLEAR_CODE {
+                if (state.cur_code as u32) == state.next_growth {
                     state.bit_width += 1;
+                    state.next_growth *= 2;
                 }
 
-                state.dict.insert(new_cur_data, state.cur_code);
+                state.dict.insert(cur_data.clone(), state.cur_code);
                 state.cur_code += 1;
             } else {
-                write_code(CLEAR_CODE, state, &mut writer)?;
+                write_code(CLEAR_CODE, 32, &mut state, &mut writer)?;
                 state.reset();
             }
 
             cur_data.clear();
-            cur_data.push(byte);
+            cur_data.push(byte[0]);
         }
     }
 
     if !cur_data.is_empty() {
-        write_code(state.dict[&cur_data], state, &mut writer)?;
+        write_code(state.dict[&cur_data], 0, &mut state, &mut writer)?;
     }
 
     if state.bit_buf > 0 {
@@ -378,32 +428,33 @@ fn lzw_encode(input: &mut dyn Read, output: &mut dyn Write, state: &mut LZWState
     Ok(())
 }
 
-fn write_code(code: u16, state: &mut LZWState, writer: &mut BufWriter<&mut dyn Write>) -> Result<(), io::Error>
+fn write_code(code: u16, threshold: u8, state: &mut LZWEncodeCtx, writer: &mut BufWriter<&mut dyn Write>) -> Result<(), io::Error>
 {
     state.bit_buf = (state.bit_buf << state.bit_width) | code as u64;
     state.bit_buf_len += state.bit_width;
 
-    while state.bit_buf_len >= 8 {
-        let byte = (state.bit_buf >> (state.bit_buf_len - 8)) as u8;
-        writer.write_all(&[byte])?;
-        state.bit_buf_len -= 8;
+    if state.bit_buf_len > threshold
+    {
+        while state.bit_buf_len >= 8 {
+            writer.write_all(&[(state.bit_buf >> (state.bit_buf_len - 8)) as u8])?;
+            state.bit_buf_len -= 8;
+        }
     }
-
     Ok(())
 }
 
-fn lzw_decode(input: &mut dyn Read, output: &mut dyn Write, state: &mut LZWState) -> io::Result<()> {
-    let mut inverted_dict: HashMap<u16, Vec<u8>> = state.dict.iter()
-        .map(|(k, &v)| (v, k.clone()))
-        .collect();
+fn lzw_decode(input: &mut dyn Read, output: &mut dyn Write) -> io::Result<()>
+{
+    let mut state = LZWDecodeCtx::new();
+
+    let mut reader = BufReader::new(input);
+    let mut writer = BufWriter::new(output);
 
     let mut prev_code: Option<u16> = None;
+    let mut byte = [0u8; 1];
 
-    let mut buf = Vec::new();
-    input.read_to_end(&mut buf)?;
-
-    for &byte in buf.iter() {
-        state.bit_buf = (state.bit_buf << 8) | byte as u64;
+    while reader.read_exact(&mut byte).is_ok() {
+        state.bit_buf = (state.bit_buf << 8) | byte[0] as u64;
         state.bit_buf_len += 8;
 
         while state.bit_buf_len >= state.bit_width {
@@ -413,33 +464,32 @@ fn lzw_decode(input: &mut dyn Read, output: &mut dyn Write, state: &mut LZWState
 
             if code == CLEAR_CODE {
                 state.reset();
-                inverted_dict = state.dict.iter()
-                    .map(|(k, &v)| (v, k.clone()))
-                    .collect();
                 prev_code = None;
                 continue;
             }
 
-            let cur_data = if let Some(cur_data) = inverted_dict.get(&code) {
-                cur_data.clone()
+            let cur_data = if code < state.cur_code {
+                state.table[code as usize].clone()
             } else if let Some(prev) = prev_code {
-                let mut cur_data = inverted_dict[&prev].clone();
+                let mut cur_data = state.table[prev as usize].clone();
                 cur_data.push(cur_data[0]);
                 cur_data
             } else {
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid LZW code"));
             };
 
-            output.write_all(&cur_data)?;
+            writer.write_all(&cur_data)?;
 
-            if let Some(prev) = prev_code {
-                let mut new_cur_data = inverted_dict[&prev].clone();
+            if let Some(prev) = prev_code
+            {
+                let mut new_cur_data = state.table[prev as usize].clone();
                 new_cur_data.push(cur_data[0]);
 
-                inverted_dict.insert(state.cur_code, new_cur_data);
+                state.table[state.cur_code as usize] = new_cur_data;
 
-                if (state.cur_code as u32) == 2u32.pow(state.bit_width as u32) - 1 {
+                if (state.cur_code as u32) == state.next_growth {
                     state.bit_width += 1;
+                    state.next_growth = 2u32.pow(state.bit_width as u32) - 1;
                 }
 
                 state.cur_code += 1;
@@ -449,22 +499,33 @@ fn lzw_decode(input: &mut dyn Read, output: &mut dyn Write, state: &mut LZWState
         }
     }
 
-    output.flush()?;
+    writer.flush()?;
     Ok(())
 }
 
-fn main() -> io::Result<()> {
-    let input_file = File::open("sirin_dr.bmp")?;
-    let mut output_file = File::create("sirin_dr.lzw")?;
-    let mut state = LZWState::new();
+fn main() -> Result<(), io::Error>
+{
+    {
+        let start = Instant::now();
 
-    lzw_encode(&mut input_file.take(u64::MAX), &mut output_file, &mut state)?;
-    let mut destate = LZWState::new();
+        let infile = File::open("experiments/sirin_delta.bmp")?;
+        let mut outfile = File::create("experiments/sirin_delta.lzw")?;
+        lzw_encode(&mut infile.take(u64::MAX), &mut outfile)?;
 
-    let mut encoded_file = File::open("sirin_dr.lzw")?;
-    let mut decoded_file = File::create("sirin_dr_restored.bmp")?;
+        let duration = start.elapsed();
+        println!("Time taken: {:?}", duration);
+    }
+    {
+        let start = Instant::now();
 
-    lzw_decode(&mut encoded_file.take(u64::MAX), &mut decoded_file, &mut destate)?;
+        let infile = File::open("experiments/sirin_delta.lzw")?;
+        let mut outfile = File::create("experiments/sirin_delta_restored.bmp")?;
+
+        lzw_decode(&mut infile.take(u64::MAX), &mut outfile)?;
+
+        let duration = start.elapsed();
+        println!("Time taken: {:?}", duration);
+    }
 
     Ok(())
 }
