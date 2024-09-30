@@ -314,7 +314,7 @@ lazy_static! {
 
 lazy_static! {
     static ref DECODE_TABLE: Vec<Vec<u8>> = {
-        let mut table = vec![vec![]; MAX_DICT_SIZE];
+        let mut table = vec![Vec::with_capacity(8); MAX_DICT_SIZE];
 
         for i in 0..=255 {
             table[i] = vec![i as u8];
@@ -393,10 +393,8 @@ fn lzw_encode(input: &mut dyn Read, output: &mut dyn Write) -> Result<(), io::Er
     while reader.read_exact(&mut byte).is_ok() {
         cur_data.push(byte[0]);
 
-        if !state.dict.contains_key(&cur_data) {
-            let mut prev_cur_data = cur_data.clone();
-            prev_cur_data.pop();
-            write_code(state.dict[&prev_cur_data], 32, &mut state, &mut writer)?;
+        if (cur_data.len() > 1) && !state.dict.contains_key(&cur_data) {
+            write_code(state.dict[&cur_data[..cur_data.len() - 1]], 32, &mut state, &mut writer)?;
 
             if state.cur_code != CLEAR_CODE {
                 if (state.cur_code as u32) == state.next_growth {
