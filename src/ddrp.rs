@@ -1,5 +1,7 @@
 use image::{ ImageBuffer, RgbImage };
 
+const DEFAULT_FILTER: image::imageops::FilterType = image::imageops::FilterType::Nearest;
+
 pub fn delta_down_res_predictor(yuv_img: &RgbImage, ds_factor: u32) -> (RgbImage, RgbImage)
 {
     let (width, height) = yuv_img.dimensions();
@@ -7,7 +9,7 @@ pub fn delta_down_res_predictor(yuv_img: &RgbImage, ds_factor: u32) -> (RgbImage
     let ds_width = width / ds_factor as u32;
     let ds_height = height / ds_factor as u32;
 
-    let ds_img = image::imageops::resize(yuv_img, ds_width, ds_height, image::imageops::FilterType::CatmullRom);
+    let ds_img = image::imageops::resize(yuv_img, ds_width, ds_height, DEFAULT_FILTER);
 
     let mut d_img: RgbImage = ImageBuffer::new(width, height);
 

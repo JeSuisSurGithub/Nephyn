@@ -1,8 +1,16 @@
 use std::io::{self, Read, Write, BufReader, BufWriter};
 use ahash::AHashMap;
 
-const MAX_DICT_SIZE: usize = 65535;
-const CLEAR_CODE: u16 = 65535;
+/*
+    16-bit: 65535
+    15-bit: 32767
+    14-bit: 16383
+    13-bit: 8191
+    12-bit: 4095
+*/
+
+const CLEAR_CODE: u16 = 16383;
+const MAX_DICT_SIZE: usize = CLEAR_CODE as usize;
 
 struct TrieNode {
     snode: AHashMap<u8, TrieNode>,
