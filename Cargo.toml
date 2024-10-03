@@ -10,5 +10,4 @@ ahash = "0.8.11"
 image = "0.25.2"
 
 [profile.release]
-opt-level = 3
 lto = true

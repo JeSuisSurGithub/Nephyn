@@ -28,11 +28,6 @@ pub fn rgb_to_yuv(rgb_img: &RgbImage) -> RgbImage
             let rgb_px = rgb_img.get_pixel(px, py);
             let yuv_px = yuv_img.get_pixel_mut(px, py);
 
-            // let (y, u, v) = rgb_to_ycocg24(rgb_px[0], rgb_px[1], rgb_px[2]);
-            // yuv_px[0] = y;
-            // yuv_px[1] = u as u8;
-            // yuv_px[2] = v as u8;
-
             let (y, u, v) = rgb_to_gcbcr(rgb_px[0], rgb_px[1], rgb_px[2]);
             yuv_px[0] = y;
             yuv_px[1] = u;
@@ -51,11 +46,6 @@ pub fn yuv_to_rgb(yuv_img: &RgbImage) -> RgbImage
         for px in 0..width {
             let yuv_px = yuv_img.get_pixel(px, py);
             let rgb_px = rgb_image.get_pixel_mut(px, py);
-
-            // let (r, g, b) = ycocg24_to_rgb(yuv_px[0], yuv_px[1] as i8, yuv_px[2] as i8);
-            // rgb_px[0] = r;
-            // rgb_px[1] = g;
-            // rgb_px[2] = b;
 
             let (r, g, b) = gcbcr_to_rgb(yuv_px[0], yuv_px[1], yuv_px[2]);
             rgb_px[0] = r;
