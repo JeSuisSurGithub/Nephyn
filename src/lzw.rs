@@ -12,6 +12,11 @@ use ahash::AHashMap;
 const CLEAR_CODE: u16 = 16383;
 const MAX_DICT_SIZE: usize = CLEAR_CODE as usize;
 
+const INIT_BIT_LEN: u8 = 9;
+const INIT_CODE: u16 = 256;
+const INIT_ENCODE_GROWTH_TRIGGER: u32 = 512;
+const INIT_DECODE_GROWTH_TRIGGER: u32 = 511;
+
 struct TrieNode {
     snode: AHashMap<u8, TrieNode>,
     code: Option<u16>
@@ -37,7 +42,7 @@ impl LZWStream {
         LZWStream {
             buf: 0,
             len: 0,
-            width: 9
+            width: INIT_BIT_LEN
         }
     }
 
@@ -76,7 +81,7 @@ impl LZWStream2 {
         LZWStream2 {
             buf: 0,
             len: 0,
-            width: 9
+            width: INIT_BIT_LEN
         }
     }
 
@@ -105,8 +110,8 @@ pub fn lzw_encode(input: &mut dyn Read, output: &mut dyn Write) -> Result<(), io
     for i in 0..=255 {
         root.snode.insert(i as u8, TrieNode::new(Some(i as u16)));
     }
-    let mut cur_code: u16 = 256;
-    let mut next_growth: u32 = 512;
+    let mut cur_code: u16 = INIT_CODE;
+    let mut next_growth: u32 = INIT_ENCODE_GROWTH_TRIGGER;
 
     let mut cur_node: &mut TrieNode = &mut root;
 
@@ -145,9 +150,9 @@ pub fn lzw_encode(input: &mut dyn Read, output: &mut dyn Write) -> Result<(), io
                 for next in root.snode.values_mut() {
                     next.snode = AHashMap::new();
                 }
-                cur_code = 256;
-                stream.width = 9;
-                next_growth = 512;
+                cur_code = INIT_CODE;
+                stream.width = INIT_BIT_LEN;
+                next_growth = INIT_ENCODE_GROWTH_TRIGGER;
             }
             cur_node = &mut root;
             cur_node = cur_node.snode.get_mut(&byte[0]).expect("[lzw_encode]: Malformed tree: badly constructed root");
@@ -175,8 +180,8 @@ pub fn lzw_decode(input: &mut dyn Read, output: &mut dyn Write) -> io::Result<()
         table[i] = vec![i as u8];
     }
     let mut prev_code: Option<u16> = None;
-    let mut cur_code: u16 = 256;
-    let mut next_growth: u32 = 511;
+    let mut cur_code: u16 = INIT_CODE;
+    let mut next_growth: u32 = INIT_DECODE_GROWTH_TRIGGER;
 
     // I/O
 
@@ -195,9 +200,9 @@ pub fn lzw_decode(input: &mut dyn Read, output: &mut dyn Write) -> io::Result<()
                 for i in 0..=255 {
                     table[i] = vec![i as u8];
                 }
-                cur_code = 256;
-                stream.width = 9;
-                next_growth = 511;
+                cur_code = INIT_CODE;
+                stream.width = INIT_BIT_LEN;
+                next_growth = INIT_DECODE_GROWTH_TRIGGER;
                 prev_code = None;
                 continue;
             }

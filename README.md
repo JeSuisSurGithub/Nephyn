@@ -1,2 +1,2 @@
-## Nephynika
+## Nephyn
 PNG but worse

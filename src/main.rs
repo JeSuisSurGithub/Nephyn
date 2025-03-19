@@ -1,5 +1,3 @@
-#![feature(portable_simd)]
-
 mod ddrp;
 mod lzw;
 mod yuv;
@@ -50,7 +48,7 @@ fn read_header(file: &mut File) -> io::Result<NpnkHeader> {
     Ok(header)
 }
 
-fn nephynika(input_path: &str, output_path: &str, ds_factor: u32) -> Result<(), io::Error> {
+fn nephyn(input_path: &str, output_path: &str, ds_factor: u32) -> Result<(), io::Error> {
 
     let start = Instant::now();
 
@@ -91,7 +89,7 @@ fn nephynika(input_path: &str, output_path: &str, ds_factor: u32) -> Result<(), 
     Ok(())
 }
 
-fn denephynika(input_path: &str, output_path: &str, ds_factor: u32)  -> Result<(), io::Error> {
+fn denephyn(input_path: &str, output_path: &str, ds_factor: u32)  -> Result<(), io::Error> {
 
     let start = Instant::now();
 
@@ -144,10 +142,10 @@ fn main()
         std::process::exit(1);
     }
     if va[1].as_str() == "npnk" {
-        nephynika(va[2].as_str(), va[3].as_str(), 4)
+        nephyn(va[2].as_str(), va[3].as_str(), 4)
             .expect("Unsuccessful conversion");
     } else if va[1].as_str() == "denpnk" {
-        denephynika(va[2].as_str(), va[3].as_str(), 4)
+        denephyn(va[2].as_str(), va[3].as_str(), 4)
             .expect("Unsuccessful conversion");
     } else {
         print_help(&va);

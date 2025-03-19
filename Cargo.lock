@@ -484,7 +484,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "nephynika"
+name = "nephyn"
 version = "0.1.0"
 dependencies = [
  "ahash",
