@@ -82,6 +82,7 @@ fn nephyn(input_path: &str, output_path: &str, ds_factor: u32) -> Result<(), io:
     npnk.write_all(&lzw_d_img_buf)?;
 
     println!("Finished in {:?}", start.elapsed());
+    println!("Speed: {}KB/s", (((header.width * header.height * 3) as f32) * 0.001 / start.elapsed().as_secs_f32()) as u32);
     println!("Saved converted image to {}", output_path);
     println!("Compression rate in reference to bitmap size {}",
         (header.ds_size + header.d_size) as f32 / (header.width * header.height * 3) as f32);
@@ -123,6 +124,7 @@ fn denephyn(input_path: &str, output_path: &str, ds_factor: u32)  -> Result<(), 
         .expect("Failed to save output image");
 
     println!("Finished in {:?}", start.elapsed());
+    println!("Speed: {}KB/s", (((header.width * header.height * 3) as f32) * 0.001 / start.elapsed().as_secs_f32()) as u32);
     println!("Saved converted image to {}", output_path);
 
     Ok(())

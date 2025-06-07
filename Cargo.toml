@@ -6,8 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ahash = "0.8.11"
-image = "0.25.2"
+
+[dependencies.image]
+version = "0.25.6"
+default-features = false
+features = ["png", "bmp", "jpeg"]
 
 [profile.release]
 lto = true
