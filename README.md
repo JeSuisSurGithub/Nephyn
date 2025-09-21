@@ -1,2 +1,2 @@
 ## Nephyn
-PNG but worse
+PNG but worse (YUV -> Downscale prediction -> LZW)
